@@ -1,0 +1,16 @@
+PaperGlide for iPad · November 20, 2026
+
+Your papers
+PaperGlide opens PDFs in the folder you choose in Files. It reads file names and dates to display and sort your library. Temporary copies on your iPad let you switch between neighboring papers.
+
+Reading and marking
+PaperGlide stores your folder selection, reading positions and sort preference in the app’s local storage. Red tags are stored in the file’s Finder metadata. Your file provider can sync tags with other devices. Saving ink writes an annotation into the PDF you selected. When that PDF lives in a shared folder, the file provider can sync those marks to people who have access.
+
+Data collection
+The developer does not receive your PDFs, annotations, file names, tags, or reading history through PaperGlide. The app has no account system, advertising, analytics SDK, or tracking. Apple and the file provider you choose handle purchases, backups, and file syncing under their own policies.
+
+Your choices
+You can remove a red tag in the reader. Deleting the app removes its local reading data from that device. Marks saved into a PDF stay in that document. Device backups may retain a copy according to your backup settings.
+
+Contact
+If you email wangleiphy@gmail.com for help, the developer receives your email address, message, and anything you attach, and uses them to respond. You can use the same address to request deletion of a support message.
