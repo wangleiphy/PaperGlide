@@ -4,8 +4,8 @@ import UIKit
 enum DemoPapers {
     // Accessible only when the UI test runner supplies its explicit launch argument.
     static func folder() throws -> Folder {
-        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(ProcessInfo.processInfo.arguments.contains("-ink-fixtures") ? "Ink Test Papers" : "Gesture Test Papers", isDirectory: true)
+        let run = ProcessInfo.processInfo.environment["PAPERGLIDE_TEST_RUN"].flatMap(UUID.init(uuidString:))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(run?.uuidString ?? "Gesture Test Papers", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for number in 1...5 {
             let file = root.appendingPathComponent("Paper \(number).pdf")

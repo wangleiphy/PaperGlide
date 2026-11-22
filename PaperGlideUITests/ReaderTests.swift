@@ -43,6 +43,7 @@ final class ReaderTests: XCTestCase {
 
     func testSortSearchAndMarkPDF() throws {
         let app = XCUIApplication()
+        app.launchEnvironment["PAPERGLIDE_TEST_RUN"] = UUID().uuidString
         app.launchArguments = ["-fixture-papers", "-ink-fixtures"]
         app.launch()
         let sort = app.buttons["Sort papers"]
@@ -65,24 +66,25 @@ final class ReaderTests: XCTestCase {
         XCTAssertTrue(rows.element(boundBy: 0).staticTexts["Paper 4"].waitForExistence(timeout: 5))
         XCTAssertEqual(rows.count, 1)
         rows.element(boundBy: 0).tap()
-        let mark = app.buttons["Mark PDF"]
-        XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Mark PDF"].exists)
+        XCTAssertFalse(app.buttons["Save"].exists)
+        let width = app.buttons["Pen options"]
+        XCTAssertTrue(width.waitForExistence(timeout: 5))
         app.pinch(withScale: 2.8, velocity: 2)
-        mark.tap()
-        let width = app.buttons["Pen width"]
         width.tap()
         app.buttons["Medium"].tap()
         XCTAssertEqual(width.value as? String, "Medium")
         width.tap()
         app.buttons["Fine"].tap()
         XCTAssertEqual(width.value as? String, "Fine")
+        width.tap()
         app.buttons["Draw with finger"].tap()
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.42, dy: 0.52))
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 120, dy: 60)))
         let undo = app.buttons["Undo last stroke"]
         XCTAssertTrue(undo.isEnabled)
         undo.tap()
-        XCTAssertFalse(app.buttons["Save"].isEnabled)
+        XCTAssertFalse(undo.isEnabled)
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 150, dy: -60)))
         let eraser = app.buttons["Stroke eraser"]
         eraser.tap()
@@ -98,14 +100,19 @@ final class ReaderTests: XCTestCase {
         zoomed.name = "Fine ink at reading zoom"
         zoomed.lifetime = .keepAlways
         add(zoomed)
-        app.buttons["Save"].tap()
-        XCTAssertTrue(mark.waitForExistence(timeout: 10))
-        let ready = NSPredicate(format: "enabled == true")
-        expectation(for: ready, evaluatedWith: mark)
-        waitForExpectations(timeout: 10)
-        let reopened = XCTAttachment(screenshot: app.screenshot())
-        reopened.name = "Reopened vector ink"
-        reopened.lifetime = .keepAlways
-        add(reopened)
+        app.navigationBars.buttons["Papers"].tap()
+        XCTAssertTrue(app.tables.firstMatch.waitForExistence(timeout: 10))
+        sort.tap()
+        app.buttons["Date created · newest first"].tap()
+        app.terminate()
+        app.launch()
+        let reopened = app.cells.containing(.staticText, identifier: "Paper 4").firstMatch
+        XCTAssertTrue(reopened.waitForExistence(timeout: 10))
+        reopened.tap()
+        width.tap()
+        app.buttons["Draw with finger"].tap()
+        eraser.tap()
+        start.withOffset(CGVector(dx: 70, dy: -28)).tap()
+        XCTAssertTrue(undoErase.waitForExistence(timeout: 5), "The reopened PDF must contain erasable, saved ink.")
     }
 }

@@ -1,7 +1,7 @@
 import UIKit
 import PDFKit
 
-final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UIDocumentPickerDelegate {
+final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     let folder: Folder
     let papers: [PaperEntry]
     var didChangeTags: (() -> Void)?
@@ -16,13 +16,19 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
     private lazy var eraser = UIBarButtonItem(image: UIImage(systemName: "eraser"), style: .plain, target: self, action: #selector(toggleEraser))
     private var saving = false
     private var tagging = Set<String>()
-    private var exportDirectory: URL?
+    private var revision = 0
+    private var savedRevision = 0
+    private var lastWritten: URL?
+    private var recoveryURL: URL?
+    private var recoveryNoticePending = false
+    private var scheduledSave: DispatchWorkItem?
+    private var afterSave: (() -> Void)?
+    private var fingerDrawing = false
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var libraryNeedsRefresh = false
     private var originalScrollTouches = 1
-    private lazy var mark = UIBarButtonItem(image: UIImage(systemName: "pencil.tip"), style: .plain, target: self, action: #selector(startInk))
-    private lazy var saveInkButton = UIBarButtonItem(title: "Save", style: .done, target: self, action: #selector(saveInk))
     private lazy var undoInkButton = UIBarButtonItem(image: UIImage(systemName: "arrow.uturn.backward"), style: .plain, target: self, action: #selector(undoInk))
-    private let nibButton = UIBarButtonItem(image: UIImage(systemName: "lineweight"), menu: nil)
-    private lazy var finger = UIBarButtonItem(image: UIImage(systemName: "hand.draw"), style: .plain, target: self, action: #selector(toggleFinger))
+    private let nibButton = UIBarButtonItem(image: UIImage(systemName: "pencil.tip"), menu: nil)
     private var index: Int
     private var panes = [Int: PaperPane]()
     private let canvas = UIView()
@@ -44,6 +50,9 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
         queue.maxConcurrentOperationCount = 3
         queue.qualityOfService = .userInitiated
     }
+    deinit {
+        if let lastWritten { try? FileManager.default.removeItem(at: lastWritten) }
+    }
     required init?(coder: NSCoder) { fatalError() }
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -57,9 +66,11 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
         canvas.addGestureRecognizer(pan)
         previous.accessibilityLabel = "Previous paper"
         nextButton.accessibilityLabel = "Next paper"
-        mark.accessibilityLabel = "Mark PDF"
+        navigationItem.hidesBackButton = true
+        navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Papers", style: .plain, target: self, action: #selector(returnToLibrary))
+        nibButton.accessibilityLabel = "Pen options"
         undoInkButton.accessibilityLabel = "Undo last stroke"
-        navigationItem.rightBarButtonItems = [mark, tag, nextButton, previous]
+        navigationItem.rightBarButtonItems = [nibButton, eraser, undoInkButton, tag, nextButton, previous]
         updateWindow()
     }
     override func viewWillAppear(_ animated: Bool) {
@@ -76,6 +87,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         savePosition()
+        if libraryNeedsRefresh { didSavePDF?(); libraryNeedsRefresh = false }
         navigationController?.interactivePopGestureRecognizer?.isEnabled = popGestureWasEnabled
         if #available(iOS 26.0, *) { navigationController?.interactiveContentPopGestureRecognizer?.isEnabled = contentPopWasEnabled }
     }
@@ -119,7 +131,10 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
     }
     private func updateControls() {
         title = (papers[index].name as NSString).deletingPathExtension
-        mark.isEnabled = !settling && panes[index]?.retainedPaper?.document.allowsCommenting == true
+        if !settling, drawing == nil, let pane = panes[index], pane.retainedPaper?.document.allowsCommenting == true {
+            attachInk(to: pane)
+        }
+        refreshInkButtons()
         previous.isEnabled = index > 0 && !settling
         nextButton.isEnabled = index + 1 < papers.count && !settling
         let tagged = folder.tags.contains(papers[index].name)
@@ -157,7 +172,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
     @objc private func nextPaper() { settle(1) }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        guard !settling, recognizer === pan else { return false }
+        guard !settling, afterSave == nil, !(fingerDrawing && drawing != nil), recognizer === pan else { return false }
         let velocity = pan.velocity(in: canvas)
         guard abs(velocity.x) > abs(velocity.y) * 1.4 else { return false }
         let direction = velocity.x < 0 ? 1 : -1
@@ -188,13 +203,27 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
     private func settle(_ step: Int) {
         guard !settling else { return }
         let delta = papers.indices.contains(index + step) ? step : 0
-        if delta != 0 { savePosition() }
+        if delta != 0 {
+            guard afterSave == nil else { return }
+            leaveAfterSaving { [weak self] in self?.animateSwitch(delta) }
+        } else { animateSwitch(0) }
+    }
+    private func animateSwitch(_ delta: Int) {
+        if delta != 0 { drawing?.isEnabled = false; savePosition() }
         settling = true
         updateControls()
         UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
             self.drag = -CGFloat(delta) * self.canvas.bounds.width
             self.layoutPanes()
         } completion: { _ in
+            if delta != 0 {
+                let changed = self.revision > 0
+                self.detachInk()
+                if changed {
+                    // A later visit must start from the bytes now in the source file.
+                    self.panes.removeValue(forKey: self.index)?.removeFromSuperview()
+                }
+            }
             self.index += delta
             self.drag = 0
             self.settling = false
@@ -204,15 +233,14 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate, UID
 }
 
 extension ReaderController {
-    @objc private func startInk() {
-        guard drawing == nil, let pane = panes[index], pane.retainedPaper != nil else { return }
+    private func attachInk(to pane: PaperPane) {
         let gesture = InkGesture(surface: pane.pdf)
         gesture.onStroke = { [weak self, weak pane] stroke in
             guard let self, let page = pane?.pdf.document?.page(at: stroke.page) else { return }
             let mark = InkDisplay.DisplayMark(stroke.annotation(), origin: .drawn(stroke), pageIndex: stroke.page)
             pane?.inkDisplay.add(mark, on: page)
             self.edits.append(.draw(mark))
-            self.refreshInkButtons()
+            self.inkChanged()
         }
         gesture.onErase = { [weak self, weak pane] page, start, end, radius in
             guard let self, let hits = pane?.inkDisplay.erase(on: page, from: start, to: end, radius: radius), !hits.isEmpty else { return }
@@ -224,72 +252,67 @@ extension ReaderController {
             guard let self, !self.activeErasures.isEmpty else { return }
             let edit = InkEdit.erase(self.activeErasures)
             self.activeErasures = []
-            if completed { self.edits.append(edit) } else { self.reverse(edit) }
+            if completed { self.edits.append(edit); self.inkChanged() } else { self.reverse(edit) }
             self.refreshInkButtons()
         }
         gesture.nib = InkNib(rawValue: UserDefaults.standard.string(forKey: "inkNib") ?? "") ?? .fine
         drawing = gesture
-        configureNibMenu()
-        pan.isEnabled = false
         originalScrollTouches = pane.scrollView?.panGestureRecognizer.minimumNumberOfTouches ?? 1
         pane.scrollView?.panGestureRecognizer.require(toFail: gesture)
-        navigationItem.hidesBackButton = true
-        navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelInk))
-        navigationItem.rightBarButtonItems = [saveInkButton, undoInkButton, eraser, nibButton, finger]
-        refreshInkButtons()
+        applyInputMode()
+    }
+
+    private func applyInputMode() {
+        let pencil = NSNumber(value: UITouch.TouchType.pencil.rawValue)
+        let finger = NSNumber(value: UITouch.TouchType.direct.rawValue)
+        drawing?.allowedTouchTypes = fingerDrawing ? [pencil, finger] : [pencil]
+        panes[index]?.scrollView?.panGestureRecognizer.minimumNumberOfTouches = fingerDrawing ? 2 : originalScrollTouches
+        configureNibMenu()
     }
 
     private func configureNibMenu() {
         guard let drawing else { return }
-        nibButton.accessibilityLabel = "Pen width"
         nibButton.accessibilityValue = drawing.nib.rawValue
-        nibButton.menu = UIMenu(title: "Pen width", children: InkNib.allCases.map { nib in
+        let widths = InkNib.allCases.map { nib in
             UIAction(title: nib.rawValue, state: drawing.nib == nib ? .on : .off) { [weak self] _ in
-                self?.drawing?.isEraser = false
-                self?.drawing?.nib = nib
-                self?.refreshInkButtons()
+                guard let self else { return }
+                self.drawing?.isEraser = false
+                self.drawing?.nib = nib
                 UserDefaults.standard.set(nib.rawValue, forKey: "inkNib")
-                self?.configureNibMenu()
+                self.configureNibMenu()
+                self.refreshInkButtons()
             }
-        })
+        }
+        let finger = UIAction(title: "Draw with finger", image: UIImage(systemName: "hand.draw"),
+                              state: fingerDrawing ? .on : .off) { [weak self] _ in
+            guard let self else { return }
+            self.fingerDrawing.toggle()
+            self.applyInputMode()
+        }
+        nibButton.menu = UIMenu(children: [UIMenu(title: "Pen width", options: .displayInline, children: widths), finger])
     }
+
     private func refreshInkButtons() {
-        let canDraw = !saving && activeErasures.isEmpty
+        let enabled = drawing != nil && !settling && afterSave == nil && activeErasures.isEmpty
         let erasing = drawing?.isEraser == true
         eraser.image = UIImage(systemName: erasing ? "eraser.fill" : "eraser")
         eraser.tintColor = erasing ? .systemRed : .secondaryLabel
         eraser.accessibilityLabel = "Stroke eraser"
         eraser.accessibilityValue = erasing ? "On" : "Off"
-        eraser.isEnabled = canDraw
+        eraser.isEnabled = enabled
         if case .erase = edits.last { undoInkButton.accessibilityLabel = "Undo erase" }
         else { undoInkButton.accessibilityLabel = "Undo last stroke" }
-        let fingerOn = drawing?.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.direct.rawValue)) == true
-        finger.tintColor = fingerOn ? .systemRed : .secondaryLabel
-        finger.accessibilityLabel = fingerOn ? "Use Apple Pencil only" : "Draw with finger"
-        finger.isEnabled = canDraw
-        nibButton.isEnabled = canDraw
-        saveInkButton.title = saving ? "Saving…" : "Save"
-        saveInkButton.isEnabled = canDraw && !edits.isEmpty
-        undoInkButton.isEnabled = canDraw && !edits.isEmpty
-        navigationItem.leftBarButtonItem?.isEnabled = canDraw
+        nibButton.isEnabled = enabled
+        undoInkButton.isEnabled = enabled && !edits.isEmpty
     }
     @objc private func toggleEraser() {
         drawing?.isEraser.toggle()
         refreshInkButtons()
     }
-    @objc private func toggleFinger() {
-        guard let drawing else { return }
-        let direct = NSNumber(value: UITouch.TouchType.direct.rawValue)
-        let pencil = NSNumber(value: UITouch.TouchType.pencil.rawValue)
-        let useFinger = !drawing.allowedTouchTypes.contains(direct)
-        drawing.allowedTouchTypes = useFinger ? [pencil, direct] : [pencil]
-        panes[index]?.scrollView?.panGestureRecognizer.minimumNumberOfTouches = useFinger ? 2 : originalScrollTouches
-        refreshInkButtons()
-    }
     @objc private func undoInk() {
         guard let edit = edits.popLast() else { return }
         reverse(edit)
-        refreshInkButtons()
+        inkChanged()
     }
     private func reverse(_ edit: InkEdit) {
         guard let pane = panes[index], let doc = pane.pdf.document else { return }
@@ -302,89 +325,130 @@ extension ReaderController {
             }
         }
     }
-    @objc private func cancelInk() {
-        guard !edits.isEmpty else { finishInk(reload: false); return }
-        let alert = UIAlertController(title: "Discard markup changes?", message: nil, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Keep Editing", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Discard", style: .destructive) { [weak self] _ in self?.finishInk(reload: false) })
-        present(alert, animated: true)
-    }
-    @objc private func saveInk() {
-        guard !saving, let paper = panes[index]?.retainedPaper, !edits.isEmpty else { return }
-        saving = true
-        drawing?.isEnabled = false
+    private func inkChanged() {
+        revision += 1
         refreshInkButtons()
+        scheduledSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.flushInk() }
+        scheduledSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    @objc private func returnToLibrary() {
+        guard !settling, afterSave == nil else { return }
+        leaveAfterSaving { [weak self] in self?.navigationController?.popViewController(animated: true) }
+    }
+
+    private func leaveAfterSaving(_ action: @escaping () -> Void) {
+        drawing?.isEnabled = false
+        guard savedRevision != revision || saving else { action(); return }
+        afterSave = action
+        refreshInkButtons()
+        flushInk()
+    }
+
+    func flushInk() {
+        scheduledSave?.cancel()
+        scheduledSave = nil
+        guard !saving, revision != savedRevision, let paper = panes[index]?.retainedPaper else { return }
+        saving = true
+        let ticket = revision
         let source = folder.url.appendingPathComponent(papers[index].name)
-        if let old = exportDirectory { try? FileManager.default.removeItem(at: old) }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        exportDirectory = directory
-        let draft = directory.appendingPathComponent(source.deletingPathExtension().lastPathComponent + " (marked).pdf")
+        let expected = lastWritten ?? paper.snapshot
+        let recovery = recoveryURL
         var added = [InkDisplay.DisplayMark]()
+        var erased = Set<ObjectIdentifier>()
         var removed = [Int: Set<Int>]()
         for edit in edits {
             switch edit {
             case .draw(let mark):
                 added.append(mark)
             case .erase(let marks):
-                let erasedIDs = Set(marks.map(ObjectIdentifier.init))
-                added.removeAll { erasedIDs.contains(ObjectIdentifier($0)) }
                 for mark in marks {
-                    if case .saved(let index) = mark.origin { removed[mark.pageIndex, default: []].insert(index) }
+                    erased.insert(ObjectIdentifier(mark))
+                    if case .saved(let slot) = mark.origin { removed[mark.pageIndex, default: []].insert(slot) }
                 }
             }
         }
         let strokes = added.compactMap { mark -> InkStroke? in
-            if case .drawn(let stroke) = mark.origin { return stroke }
-            return nil
+            guard !erased.contains(ObjectIdentifier(mark)), case .drawn(let stroke) = mark.origin else { return nil }
+            return stroke
         }
         let removedSlots = removed
-        if strokes.isEmpty && removedSlots.isEmpty { saving = false; finishInk(reload: false); return }
+        if lastWritten == nil, strokes.isEmpty, removedSlots.isEmpty {
+            saving = false
+            savedRevision = revision
+            let action = afterSave
+            afterSave = nil
+            action?()
+            return
+        }
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Save PDF ink") { [weak self] in self?.endBackgroundSave() }
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try InkFile.generate(from: paper.snapshot, strokes: strokes, removing: removedSlots, to: draft)
-                try InkFile.commit(draft, replacing: source, basedOn: paper.snapshot)
+                try InkFile.autosave(from: paper.snapshot, expected: expected, source: source,
+                                     recovery: recovery, strokes: strokes, removing: removedSlots)
             }
             DispatchQueue.main.async {
                 self.saving = false
                 switch result {
-                case .success:
-                    self.finishInk(reload: true)
-                    self.didSavePDF?()
-                case .failure(let error):
-                    self.drawing?.isEnabled = true
-                    self.refreshInkButtons()
-                    let alert = UIAlertController(title: "Couldn’t save to the shared PDF", message: error.localizedDescription, preferredStyle: .alert)
-                    if let valid = PDFDocument(url: draft), valid.pageCount == paper.document.pageCount {
-                        alert.addAction(UIAlertAction(title: "Save a Copy", style: .default) { _ in
-                            let picker = UIDocumentPickerViewController(forExporting: [draft], asCopy: true)
-                            picker.delegate = self
-                            self.present(picker, animated: true)
-                        })
+                case .success(let output):
+                    if let old = self.lastWritten { try? FileManager.default.removeItem(at: old) }
+                    self.lastWritten = output.draft
+                    self.savedRevision = ticket
+                    if output.recovery != self.recoveryURL { self.recoveryNoticePending = true }
+                    self.recoveryURL = output.recovery
+                    self.libraryNeedsRefresh = true
+                    if ticket != self.revision { self.flushInk() }
+                    else {
+                        self.endBackgroundSave()
+                        let action = self.afterSave
+                        self.afterSave = nil
+                        if self.recoveryNoticePending, let copy = output.recovery {
+                            self.recoveryNoticePending = false
+                            self.drawing?.isEnabled = true
+                            self.refreshInkButtons()
+                            let notice = UIAlertController(title: "Saved a recovery copy",
+                                message: "The original PDF couldn’t be updated. Your edits for this visit are saving to Files → On My iPad → PaperGlide → Recovered Markups → " + copy.lastPathComponent, preferredStyle: .alert)
+                            notice.addAction(UIAlertAction(title: "OK", style: .default) { _ in action?() })
+                            self.present(notice, animated: true)
+                        } else { action?() }
                     }
+                case .failure(let error):
+                    self.afterSave = nil
+                    self.drawing?.isEnabled = true
+                    self.drag = 0
+                    self.layoutPanes()
+                    self.endBackgroundSave()
+                    self.refreshInkButtons()
+                    let alert = UIAlertController(title: "Couldn’t save your ink", message: error.localizedDescription, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "Retry", style: .default) { _ in self.flushInk() })
                     alert.addAction(UIAlertAction(title: "Keep Editing", style: .cancel))
-                    self.present(alert, animated: true)
+                    if self.presentedViewController == nil { self.present(alert, animated: true) }
                 }
             }
         }
     }
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        if !urls.isEmpty { finishInk(reload: false); didSavePDF?() }
+
+    private func endBackgroundSave() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
     }
-    private func finishInk(reload: Bool) {
-        let pane = panes[index]
-        if let drawing { pane?.pdf.removeGestureRecognizer(drawing) }
+
+    private func detachInk() {
+        if let drawing { panes[index]?.pdf.removeGestureRecognizer(drawing) }
+        panes[index]?.scrollView?.panGestureRecognizer.minimumNumberOfTouches = originalScrollTouches
         drawing = nil
-        if !reload { for edit in edits.reversed() { reverse(edit) } }
         edits = []
-        if let dir = exportDirectory { try? FileManager.default.removeItem(at: dir) }
-        exportDirectory = nil
-        pane?.scrollView?.panGestureRecognizer.minimumNumberOfTouches = originalScrollTouches
-        navigationItem.leftBarButtonItem = nil
-        navigationItem.hidesBackButton = false
-        navigationItem.rightBarButtonItems = [mark, tag, nextButton, previous]
-        pan.isEnabled = true
-        if reload { savePosition(); load(index) }
-        updateControls()
+        activeErasures = []
+        savedRevision = 0
+        revision = 0
+        if let lastWritten { try? FileManager.default.removeItem(at: lastWritten) }
+        lastWritten = nil
+        recoveryURL = nil
+        recoveryNoticePending = false
     }
 }

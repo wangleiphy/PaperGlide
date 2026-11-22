@@ -22,6 +22,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
     func sceneWillResignActive(_ scene: UIScene) {
         let navigation = window?.rootViewController as? UINavigationController
-        (navigation?.topViewController as? ReaderController)?.savePosition()
+        let reader = navigation?.topViewController as? ReaderController
+        reader?.savePosition()
+        reader?.flushInk()
     }
 }

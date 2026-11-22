@@ -42,11 +42,11 @@ Use PaperGlide on the iPad to mark papers you want more of. Paper Recommender ru
 
 ## Mark a PDF with Apple Pencil
 
-1. Open the paper and tap the **pencil tip** in the reader toolbar. Draw or write on the page with Apple Pencil. Use **Pen width** to choose Fine, Medium, or Thick. Fine is the default. A finger still scrolls, and a pinch zooms.
-2. Tap the **eraser**, then tap or sweep across PaperGlide ink to remove whole strokes, including saved strokes. Tap the eraser again to return to the pen. The curved arrow undoes the last drawing or erasing gesture. The **hand** button enables finger drawing and erasing. Use two fingers to scroll in that mode.
-3. Tap **Save** to embed the red ink in the current PDF. Everyone with access to the shared PDF can see saved marks after iCloud syncs. **Cancel** lets you discard an unsaved session.
+Touch an open PDF with Apple Pencil and start writing. PaperGlide saves completed strokes, erasures, and undos directly to the PDF after a short pause. You can keep writing while it saves. Use one finger to scroll or swipe between papers, and pinch to zoom.
 
-When another person has changed the original, or the folder is read-only, the reader offers **Save a Copy** for a successfully generated marked PDF. Your unsaved marks stay in the editor while you choose.
+- Open **Pen options** to choose Fine, Medium, or Thick. **Draw with finger** is available in the same menu. While finger drawing is on, use two fingers to scroll or the arrows to change papers.
+- Tap the **eraser** and sweep across a stroke to remove it. Tap it again to write. The curved arrow undoes the last ink edit during your visit to that paper.
+- If the original PDF changed elsewhere or its folder refuses the write, PaperGlide keeps a marked copy under **Files → On My iPad → PaperGlide → Recovered Markups** and shows its name. Subsequent edits during that visit go to the recovery copy.
 
 ## Storage and iCloud
 
@@ -56,7 +56,7 @@ PaperGlide writes the Red tag to Finder metadata on the PDF. Pull down to refres
 
 ## Continue development
 
-This repository starts with PaperGlide 1.1 build 7. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 7 was compiled with Xcode 27.2.
+The current version is PaperGlide 1.2 build 8. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 8 was compiled with Xcode 27.2.
 
 | File | Responsibility |
 | --- | --- |
@@ -71,4 +71,4 @@ To finish checking cross-device tag sync, apply a red tag to a sample in iCloud 
 
 ## Run the UI tests
 
-Select an iPad simulator in Xcode and press **⌘U**. The test generates sample PDFs in the test app’s own Documents directory and exercises reading gestures, tag persistence, sorting, filename search, undo, and saving ink.
+Select an iPad simulator in Xcode and press **⌘U**. The test generates sample PDFs in the test app’s own Documents directory and exercises reading gestures, tag persistence, sorting, filename search, undo, and reopening automatically saved ink.

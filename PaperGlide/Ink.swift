@@ -237,6 +237,33 @@ enum InkFile {
         }
     }
 
+    // The view keeps its original snapshot so undo and erasing original annotation
+    // slots stay valid. Each commit compares against the most recent saved bytes.
+    static func autosave(from snapshot: URL, expected: URL, source: URL, recovery: URL?,
+                         strokes: [InkStroke], removing: [Int: Set<Int>]) throws -> (draft: URL, recovery: URL?) {
+        let fm = FileManager.default
+        let draft = snapshot.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
+        do {
+            if strokes.isEmpty && removing.isEmpty { try fm.copyItem(at: snapshot, to: draft) }
+            else { try generate(from: snapshot, strokes: strokes, removing: removing, to: draft) }
+            do {
+                try commit(draft, replacing: recovery ?? source, basedOn: expected)
+                return (draft, recovery)
+            } catch {
+                let docs = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+                let dir = docs.appendingPathComponent("Recovered Markups", isDirectory: true)
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let name = String(source.deletingPathExtension().lastPathComponent.prefix(60))
+                let copy = dir.appendingPathComponent(name + " (marked " + UUID().uuidString.prefix(8) + ").pdf")
+                try fm.copyItem(at: draft, to: copy)
+                return (draft, copy)
+            }
+        } catch {
+            try? fm.removeItem(at: draft)
+            throw error
+        }
+    }
+
     static func commit(_ draft: URL, replacing source: URL, basedOn snapshot: URL) throws {
         let fm = FileManager.default
         var coordinatorError: NSError?
