@@ -102,10 +102,10 @@ final class ReaderTests: XCTestCase {
         add(zoomed)
         app.navigationBars.buttons["Papers"].tap()
         XCTAssertTrue(app.tables.firstMatch.waitForExistence(timeout: 10))
-        sort.tap()
-        app.buttons["Date created · newest first"].tap()
         app.terminate()
         app.launch()
+        sort.tap()
+        app.buttons["Date created · newest first"].tap()
         let reopened = app.cells.containing(.staticText, identifier: "Paper 4").firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 10))
         reopened.tap()
