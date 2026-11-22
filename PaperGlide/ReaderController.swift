@@ -28,7 +28,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     private var libraryNeedsRefresh = false
     private var originalScrollTouches = 1
     private lazy var undoInkButton = UIBarButtonItem(image: UIImage(systemName: "arrow.uturn.backward"), style: .plain, target: self, action: #selector(undoInk))
-    private let nibButton = UIBarButtonItem(image: UIImage(systemName: "pencil.tip"), menu: nil)
+    private lazy var nibButton = UIBarButtonItem(image: UIImage(systemName: "pencil.tip"), style: .plain, target: self, action: #selector(selectPencil))
     private var index: Int
     private var panes = [Int: PaperPane]()
     private let canvas = UIView()
@@ -39,8 +39,6 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     private var contentPopWasEnabled = true
     private lazy var pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
     private lazy var tag = UIBarButtonItem(image: nil, style: .plain, target: self, action: #selector(toggleTag))
-    private lazy var previous = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(previousPaper))
-    private lazy var nextButton = UIBarButtonItem(image: UIImage(systemName: "chevron.right"), style: .plain, target: self, action: #selector(nextPaper))
 
     init(folder: Folder, papers: [PaperEntry], index: Int) {
         self.folder = folder
@@ -64,13 +62,12 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
         pan.delegate = self
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue), NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         canvas.addGestureRecognizer(pan)
-        previous.accessibilityLabel = "Previous paper"
-        nextButton.accessibilityLabel = "Next paper"
         navigationItem.hidesBackButton = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Papers", style: .plain, target: self, action: #selector(returnToLibrary))
-        nibButton.accessibilityLabel = "Pen options"
+        nibButton.accessibilityLabel = "Pencil"
+        nibButton.accessibilityHint = "Touch and hold for pen width and finger drawing."
         undoInkButton.accessibilityLabel = "Undo last stroke"
-        navigationItem.rightBarButtonItems = [nibButton, eraser, undoInkButton, tag, nextButton, previous]
+        navigationItem.rightBarButtonItems = [nibButton, eraser, undoInkButton, tag]
         updateWindow()
     }
     override func viewWillAppear(_ animated: Bool) {
@@ -135,8 +132,6 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
             attachInk(to: pane)
         }
         refreshInkButtons()
-        previous.isEnabled = index > 0 && !settling
-        nextButton.isEnabled = index + 1 < papers.count && !settling
         let tagged = folder.tags.contains(papers[index].name)
         tag.image = UIImage(systemName: tagged ? "tag.fill" : "tag")
         tag.tintColor = tagged ? .systemRed : .secondaryLabel
@@ -168,8 +163,6 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
             }
         }
     }
-    @objc private func previousPaper() { settle(-1) }
-    @objc private func nextPaper() { settle(1) }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
         guard !settling, afterSave == nil, !(fingerDrawing && drawing != nil), recognizer === pan else { return false }
@@ -295,6 +288,7 @@ extension ReaderController {
     private func refreshInkButtons() {
         let enabled = drawing != nil && !settling && afterSave == nil && activeErasures.isEmpty
         let erasing = drawing?.isEraser == true
+        nibButton.tintColor = enabled && !erasing ? .systemRed : .secondaryLabel
         eraser.image = UIImage(systemName: erasing ? "eraser.fill" : "eraser")
         eraser.tintColor = erasing ? .systemRed : .secondaryLabel
         eraser.accessibilityLabel = "Stroke eraser"
@@ -304,6 +298,10 @@ extension ReaderController {
         else { undoInkButton.accessibilityLabel = "Undo last stroke" }
         nibButton.isEnabled = enabled
         undoInkButton.isEnabled = enabled && !edits.isEmpty
+    }
+    @objc private func selectPencil() {
+        drawing?.isEraser = false
+        refreshInkButtons()
     }
     @objc private func toggleEraser() {
         drawing?.isEraser.toggle()

@@ -36,7 +36,7 @@ Use PaperGlide on the iPad to mark papers you want more of. Paper Recommender ru
 - Tap **Choose Folder** and select your shared papers folder in iCloud Drive. PaperGlide remembers that folder. For a nested collection, choose the subfolder you want to read.
 - Type any part of a filename into **Search by filename**. Matching ignores capitalization. Papers appear newest creation date first by default. PaperGlide remembers any order you choose afterward. Use the **up/down arrows** in the library toolbar to sort by filename, creation date, or modification date. Either date can be sorted newest or oldest first.
 - Tap a filename. Scroll up or down to read. Swipe left for the next paper, or right for the previous one. The swipe order follows the visible library list, including its current sort order, filename search, and red-tag filter.
-- Pinch to zoom. While zoomed in, drag across the middle to pan a figure. Start a horizontal swipe within about a finger’s width of the left or right edge to change papers. The toolbar arrows also switch papers.
+- Pinch to zoom. While zoomed in, drag across the middle to pan a figure. Start a horizontal swipe within about a finger’s width of the left or right edge to change papers.
 - Tap the outline tag to mark the current PDF. It turns red. Tap again to remove it. In the library, tap the tag button to show your red-tagged papers. A tagging change takes effect immediately. An open reading sequence keeps its order until you return to the library.
 - Return to a paper to resume at its saved page, position and zoom. Pull down in the library to refresh after someone adds or renames PDFs.
 
@@ -44,7 +44,7 @@ Use PaperGlide on the iPad to mark papers you want more of. Paper Recommender ru
 
 Touch an open PDF with Apple Pencil and start writing. PaperGlide saves completed strokes, erasures, and undos directly to the PDF after a short pause. You can keep writing while it saves. Use one finger to scroll or swipe between papers, and pinch to zoom.
 
-- Open **Pen options** to choose Fine, Medium, or Thick. **Draw with finger** is available in the same menu. While finger drawing is on, use two fingers to scroll or the arrows to change papers.
+- Tap the **pencil** to return to writing with the current width. Touch and hold the pencil to choose Fine, Medium, or Thick. **Draw with finger** is available in the same menu. While finger drawing is on, use two fingers to scroll. Turn finger drawing off to swipe between papers.
 - Tap the **eraser** and sweep across a stroke to remove it. Tap it again to write. The curved arrow undoes the last ink edit during your visit to that paper.
 - If the original PDF changed elsewhere or its folder refuses the write, PaperGlide keeps a marked copy under **Files → On My iPad → PaperGlide → Recovered Markups** and shows its name. Subsequent edits during that visit go to the recovery copy.
 
@@ -56,7 +56,7 @@ PaperGlide writes the Red tag to Finder metadata on the PDF. Pull down to refres
 
 ## Continue development
 
-The current version is PaperGlide 1.2 build 8. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 8 was compiled with Xcode 27.2.
+The current version is PaperGlide 1.2 build 9. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 9 was compiled with Xcode 27.2.
 
 | File | Responsibility |
 | --- | --- |
