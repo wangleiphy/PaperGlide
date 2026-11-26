@@ -38,6 +38,7 @@ Use PaperGlide on the iPad to mark papers you want more of. Paper Recommender ru
 - Tap a filename. Scroll up or down to read. Swipe left for the next paper, or right for the previous one. The swipe order follows the visible library list, including its current sort order, filename search, and red-tag filter.
 - Pinch to zoom. While zoomed in, drag across the middle to pan a figure. Start a horizontal swipe within about a finger’s width of the left or right edge to change papers.
 - Tap the outline tag to mark the current PDF. It turns red. Tap again to remove it. In the library, tap the tag button to show your red-tagged papers. A tagging change takes effect immediately. An open reading sequence keeps its order until you return to the library.
+- Swipe left on a paper in the library and tap **Delete**, or tap the trash button in the reader. Confirm the filename to delete the PDF from its folder. Deleting from a shared folder affects everyone with access. After deleting in the reader, you return to the library.
 - Return to a paper to resume at its saved page, position and zoom. Pull down in the library to refresh after someone adds or renames PDFs.
 
 ## Mark a PDF with Apple Pencil
@@ -56,7 +57,7 @@ PaperGlide writes the Red tag to Finder metadata on the PDF. Pull down to refres
 
 ## Continue development
 
-The current version is PaperGlide 1.2 build 9. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 9 was compiled with Xcode 27.2.
+The current version is PaperGlide 1.2 build 10. Open the Xcode project, select the **PaperGlide** scheme and an iPad simulator, and press **⌘R**. The app uses UIKit and PDFKit and has no third-party dependencies. Build 10 was compiled with Xcode 27.2.
 
 | File | Responsibility |
 | --- | --- |

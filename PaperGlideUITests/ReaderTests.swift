@@ -1,6 +1,41 @@
 import XCTest
 
 final class ReaderTests: XCTestCase {
+    func testDeleteFromListAndReader() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["PAPERGLIDE_TEST_RUN"] = UUID().uuidString
+        app.launchArguments = ["-fixture-papers", "-librarySortOrder", "Filename"]
+        app.launch()
+        let rows = app.tables.cells
+        let first = rows.containing(.staticText, identifier: "Paper 1").firstMatch
+        let second = rows.containing(.staticText, identifier: "Paper 2").firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        first.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        let listPrompt = app.alerts["Delete Paper 1.pdf?"]
+        listPrompt.buttons["Cancel"].tap()
+        XCTAssertTrue(first.exists)
+        first.swipeLeft()
+        app.buttons["Delete"].firstMatch.tap()
+        listPrompt.buttons["Delete"].tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(second.exists)
+        second.tap()
+        let trash = app.buttons["Delete PDF"]
+        trash.tap()
+        let readerPrompt = app.alerts["Delete Paper 2.pdf?"]
+        readerPrompt.buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Paper 2"].exists)
+        trash.tap()
+        readerPrompt.buttons["Delete"].tap()
+        XCTAssertTrue(app.buttons["Choose folder"].waitForExistence(timeout: 10))
+        app.tables.firstMatch.swipeDown()
+        XCTAssertTrue(rows.containing(.staticText, identifier: "Paper 3").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(first.exists)
+        XCTAssertFalse(second.exists)
+        XCTAssertEqual(rows.count, 3)
+    }
+
     func testGesturesAndPersistentTag() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-fixture-papers", "-librarySortOrder", "Filename"]

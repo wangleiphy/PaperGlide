@@ -5,6 +5,9 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     let folder: Folder
     let papers: [PaperEntry]
     var didChangeTags: (() -> Void)?
+    var didDeletePDF: ((String) -> Void)?
+    private var deleting = false
+    private lazy var trash = UIBarButtonItem(barButtonSystemItem: .trash, target: self, action: #selector(deleteCurrentPaper))
     var didSavePDF: (() -> Void)?
     private var drawing: InkGesture?
     private enum InkEdit {
@@ -67,7 +70,8 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
         nibButton.accessibilityLabel = "Pencil"
         nibButton.accessibilityHint = "Touch and hold for pen width and finger drawing."
         undoInkButton.accessibilityLabel = "Undo last stroke"
-        navigationItem.rightBarButtonItems = [nibButton, eraser, undoInkButton, tag]
+        trash.accessibilityLabel = "Delete PDF"
+        navigationItem.rightBarButtonItems = [trash, nibButton, eraser, undoInkButton, tag]
         updateWindow()
     }
     override func viewWillAppear(_ animated: Bool) {
@@ -94,7 +98,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
         layoutPanes()
     }
     func savePosition() {
-        if let saved = panes[index]?.position() { folder.save(saved, for: papers[index].name) }
+        if !deleting, let saved = panes[index]?.position() { folder.save(saved, for: papers[index].name) }
     }
     private func updateWindow() {
         for i in Array(panes.keys) where abs(i - index) > 1 {
@@ -128,7 +132,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     }
     private func updateControls() {
         title = (papers[index].name as NSString).deletingPathExtension
-        if !settling, drawing == nil, let pane = panes[index], pane.retainedPaper?.document.allowsCommenting == true {
+        if !settling, !deleting, drawing == nil, let pane = panes[index], pane.retainedPaper?.document.allowsCommenting == true {
             attachInk(to: pane)
         }
         refreshInkButtons()
@@ -136,7 +140,35 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
         tag.image = UIImage(systemName: tagged ? "tag.fill" : "tag")
         tag.tintColor = tagged ? .systemRed : .secondaryLabel
         tag.accessibilityLabel = tagged ? "Remove red tag" : "Add red tag"
-        tag.isEnabled = !settling && !tagging.contains(papers[index].name)
+        trash.isEnabled = !deleting && !settling && afterSave == nil
+        tag.isEnabled = !deleting && !settling && !tagging.contains(papers[index].name)
+    }
+    @objc private func deleteCurrentPaper() {
+        guard !deleting, !settling, afterSave == nil else { return }
+        let name = papers[index].name
+        confirmPDFDeletion(name) { [weak self] in
+            guard let self else { return }
+            self.leaveAfterSaving {
+                self.deleting = true
+                self.drawing?.isEnabled = false
+                self.navigationItem.leftBarButtonItem?.isEnabled = false
+                self.updateControls()
+                self.folder.deletePDF(name) { result in
+                    switch result {
+                    case .success:
+                        self.libraryNeedsRefresh = false
+                        self.didDeletePDF?(name)
+                        self.navigationController?.popViewController(animated: true)
+                    case .failure(let error):
+                        self.deleting = false
+                        self.drawing?.isEnabled = true
+                        self.navigationItem.leftBarButtonItem?.isEnabled = true
+                        self.updateControls()
+                        self.showDeletionError(name, error: error)
+                    }
+                }
+            }
+        }
     }
     @objc private func toggleTag() {
         let name = papers[index].name
@@ -165,7 +197,7 @@ final class ReaderController: UIViewController, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        guard !settling, afterSave == nil, !(fingerDrawing && drawing != nil), recognizer === pan else { return false }
+        guard !deleting, !settling, afterSave == nil, !(fingerDrawing && drawing != nil), recognizer === pan else { return false }
         let velocity = pan.velocity(in: canvas)
         guard abs(velocity.x) > abs(velocity.y) * 1.4 else { return false }
         let direction = velocity.x < 0 ? 1 : -1
@@ -286,7 +318,7 @@ extension ReaderController {
     }
 
     private func refreshInkButtons() {
-        let enabled = drawing != nil && !settling && afterSave == nil && activeErasures.isEmpty
+        let enabled = drawing != nil && !deleting && !settling && afterSave == nil && activeErasures.isEmpty
         let erasing = drawing?.isEraser == true
         nibButton.tintColor = enabled && !erasing ? .systemRed : .secondaryLabel
         eraser.image = UIImage(systemName: erasing ? "eraser.fill" : "eraser")
@@ -333,7 +365,7 @@ extension ReaderController {
     }
 
     @objc private func returnToLibrary() {
-        guard !settling, afterSave == nil else { return }
+        guard !deleting, !settling, afterSave == nil else { return }
         leaveAfterSaving { [weak self] in self?.navigationController?.popViewController(animated: true) }
     }
 

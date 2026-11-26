@@ -15,6 +15,7 @@ final class LibraryController: UITableViewController, UIDocumentPickerDelegate, 
     private let emptyMessage = UILabel()
     private let emptyChoose = UIButton(type: .system)
     private var redOnly = false
+    private var deleting = Set<URL>()
     private var loading = false
     private var readError: String?
     private var revision = 0
@@ -252,11 +253,65 @@ final class LibraryController: UITableViewController, UIDocumentPickerDelegate, 
         cell.accessoryType = .disclosureIndicator
         return cell
     }
+    override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard let folder, visible.indices.contains(indexPath.row) else { return nil }
+        let name = visible[indexPath.row].name
+        let url = folder.url.appendingPathComponent(name)
+        let action = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, close in
+            close(false) // The table changes only after the file operation succeeds.
+            guard let self, self.folder === folder, !self.deleting.contains(url) else { return }
+            self.confirmPDFDeletion(name) {
+                guard self.deleting.insert(url).inserted else { return }
+                folder.deletePDF(name) { result in
+                    self.deleting.remove(url)
+                    guard self.folder === folder else { return }
+                    switch result {
+                    case .success: self.removeDeletedPDF(name)
+                    case .failure(let error): self.showDeletionError(name, error: error)
+                    }
+                }
+            }
+        }
+        action.image = UIImage(systemName: "trash")
+        let configuration = UISwipeActionsConfiguration(actions: [action])
+        configuration.performsFirstActionWithFullSwipe = false
+        return configuration
+    }
+
+    private func removeDeletedPDF(_ name: String) {
+        sorting?.cancel()
+        filtering?.cancel()
+        papers.removeAll { $0.name == name }
+        orderedPapers.removeAll { $0.name == name }
+        visible.removeAll { $0.name == name }
+        reloadResults()
+        refresh()
+    }
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         guard let folder else { return }
+        guard !deleting.contains(folder.url.appendingPathComponent(visible[indexPath.row].name)) else { return }
         let reader = ReaderController(folder: folder, papers: visible, index: indexPath.row)
         reader.didChangeTags = { [weak self] in self?.applyFilter() }
+        reader.didDeletePDF = { [weak self] name in self?.removeDeletedPDF(name) }
         reader.didSavePDF = { [weak self] in self?.refresh() }
         navigationController?.pushViewController(reader, animated: true)
+    }
+}
+
+extension UIViewController {
+    func confirmPDFDeletion(_ name: String, onConfirm: @escaping () -> Void) {
+        let alert = UIAlertController(title: "Delete " + name + "?",
+                                      message: "This removes the PDF from its folder. In a shared folder, it also removes it for everyone with access.",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { _ in onConfirm() })
+        present(alert, animated: true)
+    }
+
+    func showDeletionError(_ name: String, error: Error) {
+        let alert = UIAlertController(title: "Couldn’t delete " + name, message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 }

@@ -177,6 +177,43 @@ final class Folder {
         }
     }
 
+    func deletePDF(_ name: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        Self.metadataQueue.async {
+            let result = Result { try self.trashPDF(name) }
+            DispatchQueue.main.async {
+                if case .success = result { self.tags.remove(name) }
+                completion(result)
+            }
+        }
+    }
+
+    private func trashPDF(_ name: String) throws {
+        guard name == (name as NSString).lastPathComponent,
+              (name as NSString).pathExtension.lowercased() == "pdf" else { throw CocoaError(.fileWriteInvalidFileName) }
+        let file = url.appendingPathComponent(name)
+        var coordinationError: NSError?
+        var outcome: Result<Void, Error>?
+        NSFileCoordinator().coordinate(writingItemAt: file, options: .forDeleting, error: &coordinationError) { live in
+            outcome = Result {
+                let values = try live.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { throw CocoaError(.fileWriteInvalidFileName) }
+                do {
+                    try FileManager.default.trashItem(at: live, resultingItemURL: nil)
+                } catch let error as CocoaError where error.code == .featureUnsupported {
+                    try FileManager.default.removeItem(at: live)
+                }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let outcome else { throw CocoaError(.fileWriteUnknown) }
+        try outcome.get()
+        defaults.removeObject(forKey: key + ".position." + name)
+        let oldTags = key + ".red"
+        if let old = defaults.stringArray(forKey: oldTags), old.contains(name) {
+            defaults.set(old.filter { $0 != name }, forKey: oldTags)
+        }
+    }
+
     func papers() throws -> [PaperEntry] {
         try coordinatedRead(url) { dir in
             let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey, .creationDateKey]
