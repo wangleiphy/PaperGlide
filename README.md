@@ -1,5 +1,7 @@
 # PaperGlide for iPad
 
+<img src="PaperGlide/Assets.xcassets/AppIcon.appiconset/PaperGlide.png" alt="PaperGlide app icon" width="112" height="112">
+
 Open a PDF, scroll vertically to read and swipe horizontally to the next or previous paper. A red tag button stays in the reader toolbar.
 
 ## Install on your iPad
