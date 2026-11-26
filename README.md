@@ -4,6 +4,23 @@
 
 Open a PDF, scroll vertically to read and swipe horizontally to the next or previous paper. A red tag button stays in the reader toolbar.
 
+## Reading gestures
+
+Swipe **up** to read farther down the PDF or **down** to revisit an earlier passage. Swipe **left** to open the next paper in your library list or **right** to go back.
+
+<img src="docs/gestures/reading-gestures.gif" width="610" alt="iPad recording showing a swipe up to the second page, down to the first page, left to the next paper, and right to return.">
+
+[Download the iPad recording (MP4)](https://raw.githubusercontent.com/wangleiphy/PaperGlide/main/docs/gestures/reading-gestures.mp4)
+
+<details>
+<summary>See the gestures as still screenshots</summary>
+
+| Swipe up ↑ | Swipe down ↓ | Swipe sideways ← → |
+| --- | --- | --- |
+| ![The next page coming into view below the wave diagram.](docs/gestures/swipe-up.jpg) | ![Back at the title and wave diagram on the first page.](docs/gestures/swipe-down.jpg) | ![Two PDFs side by side midway through a swipe to the next paper.](docs/gestures/switch-papers.jpg) |
+
+</details>
+
 ## Install on your iPad
 
 You’ll need a Mac with Xcode, an iPad running iPadOS 17 or later, a USB cable, and an Apple Account. A free Apple Account works for a personal install. Its signing profile lasts seven days. To renew it, reconnect the iPad and run the project again with the same account and bundle identifier. [Apple’s Personal Team guide](https://developer.apple.com/help/account/basics/about-your-developer-account)
